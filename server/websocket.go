@@ -1252,6 +1252,42 @@ func (s *Server) wsConfigAuth(opts *WebsocketOpts) {
 	ws.authOverride = opts.Username != _EMPTY_ || opts.Token != _EMPTY_ || opts.NoAuthUser != _EMPTY_
 }
 
+// HandleWebSocket allows for an embedded server to expose a NATS websocket Handler
+// preventing the need to reverse proxy the NATS connection back into a separate
+// port on the same process. By using this handler, the embedded server is responsible
+// for handling the tls configurations as well as the requested origins, as the internal
+// code in used by this handler will allow all origins.
+// This endpoint does come with some limitations, such as not supporting MQTT or Leaf Nodes,
+// as well as if the HTTP handler is not on the root path (/), most NATS clients will not be
+// able to connect to the endpoint. The intention of this handler is for in browser
+// websocket connections.
+func (s *Server) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
+	res, err := s.wsUpgrade(w, r)
+	if err != nil {
+		s.Errorf(err.Error())
+		return
+	}
+
+	switch res.kind {
+	case CLIENT:
+		s.createWSClient(res.conn, res.ws)
+	case MQTT:
+		s.createMQTTClient(res.conn, res.ws)
+	case LEAF:
+		hasLeaf := s.getOpts().LeafNode.Port != 0
+
+		if !hasLeaf {
+			s.Errorf("Not configured to accept leaf node connections")
+			// Silently close for now. If we want to send an error back, we would
+			// need to create the leafnode client anyway, so that is handling websocket
+			// frames, then send the error to the remote.
+			res.conn.Close()
+			return
+		}
+		s.createLeafNode(res.conn, nil, nil, res.ws)
+	}
+}
+
 func (s *Server) startWebsocketServer() {
 	if s.isShuttingDown() {
 		return
