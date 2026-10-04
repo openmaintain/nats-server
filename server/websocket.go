@@ -1264,7 +1264,7 @@ func (s *Server) wsConfigAuth(opts *WebsocketOpts) {
 func (s *Server) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	res, err := s.wsUpgrade(w, r)
 	if err != nil {
-		s.Errorf(err.Error())
+		s.Errorf("websocket upgrade: %v", err)
 		return
 	}
 
@@ -1363,7 +1363,7 @@ func (s *Server) startWebsocketServer() {
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		res, err := s.wsUpgrade(w, r)
 		if err != nil {
-			s.Errorf(err.Error())
+			s.Errorf("websocket upgrade: %v", err)
 			return
 		}
 		switch res.kind {
