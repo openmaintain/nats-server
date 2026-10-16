@@ -44,6 +44,8 @@ type Authentication interface {
 
 // ClientAuthentication is an interface for client authentication
 type ClientAuthentication interface {
+	// GetID returns the immutable broker-assigned connection ID.
+	GetID() uint64
 	// GetOpts gets options associated with a client
 	GetOpts() *ClientOpts
 	// GetTLSConnectionState if TLS is enabled, TLS ConnectionState, nil otherwise

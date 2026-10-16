@@ -568,6 +568,9 @@ func (c *client) GetName() string {
 	return name
 }
 
+// GetID returns the immutable broker-assigned connection ID.
+func (c *client) GetID() uint64 { return c.cid }
+
 // GetOpts returns the client options provided by the application.
 func (c *client) GetOpts() *ClientOpts {
 	return &c.opts

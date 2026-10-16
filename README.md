@@ -1,3 +1,13 @@
+# OpenMaintain NATS fork
+
+This workspace uses this fork as the embedded message broker for OpenMaintain. `Server.HandleWebSocket` exposes NATS WebSocket connections through the application's HTTP server; connection access and deadlines allow OpenMaintain to enforce its own authenticated identities and subject permissions.
+
+OpenMaintain uses protobuf payloads and NATS request/reply for Agent registration, credential refresh, and runtime operations. Web uses NATS only for scoped terminal streams and non-persistent invalidation notifications; its ordinary requests use Connect JSON over HTTP independently of NATS. Application endpoints, roles, subjects, and business authorization are implemented in the sibling `openmaintain-server` repository. JetStream is currently disabled by that application; upstream NATS features below do not imply that OpenMaintain enables them. The application currently supports a single server instance.
+
+Protocol and caller changes are coordinated across the sibling repositories; OpenMaintain is unpublished. The current acceptance record is `../openmaintain/docs/review-2026-10-16.md`.
+
+The remaining documentation describes upstream NATS.
+
 <p align="center">
   <img src="logos/nats-horizontal-color.png" width="300" alt="NATS Logo">
 </p>
