@@ -32,6 +32,17 @@ func init() {
 var cipherMap = map[string]*tls.CipherSuite{}
 var cipherMapByID = map[uint16]*tls.CipherSuite{}
 
+// Monitoring walks every live TLS connection. Reuse the process-start cipher
+// table instead of allocating CipherSuites and InsecureCipherSuites lists for
+// each connection on every snapshot. The tables are immutable after init.
+// Unknown IDs retain crypto/tls's canonical fallback representation.
+func monitoringCipherSuiteName(id uint16) string {
+	if suite := cipherMapByID[id]; suite != nil {
+		return suite.Name
+	}
+	return tls.CipherSuiteName(id)
+}
+
 func defaultCipherSuites() []uint16 {
 	ciphers := tls.CipherSuites()
 	defaults := make([]uint16, 0, len(ciphers))
