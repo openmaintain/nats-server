@@ -67,15 +67,55 @@ func (s *Server) ClientAuthSnapshots() ([]ClientAuthSnapshot, error) {
 	snapshots := make([]ClientAuthSnapshot, 0, len(clients))
 	for _, c := range clients {
 		c.mu.Lock()
-		if !c.isMqtt() && c.authVersion != nil && !c.authPending && c.flags.isSet(connectReceived) && !c.isClosed() && c.nc != nil {
-			snapshots = append(snapshots, ClientAuthSnapshot{
-				CID: c.cid, Token: c.opts.Token, AuthorizedUser: c.getRawAuthUser(),
-				Transport: c.authTransport(), Stamp: ClientAuthStamp{c.authVersion},
-			})
+		if snapshot, ok := c.completedAuthSnapshotLocked(); ok {
+			snapshots = append(snapshots, snapshot)
 		}
 		c.mu.Unlock()
 	}
 	return snapshots, nil
+}
+
+// ClientAuthSnapshotByID copies only the selected live CLIENT authentication.
+// It has the same completed/pending/transport rules as ClientAuthSnapshots and
+// avoids enumerating all connections for an individual authenticated message.
+func (s *Server) ClientAuthSnapshotByID(cid uint64) (ClientAuthSnapshot, bool, error) {
+	if s == nil || !s.Running() {
+		return ClientAuthSnapshot{}, false, ErrServerNotRunning
+	}
+	c := s.getClient(cid)
+	if c == nil {
+		return ClientAuthSnapshot{}, false, nil
+	}
+	c.mu.Lock()
+	snapshot, ok := c.completedAuthSnapshotLocked()
+	c.mu.Unlock()
+	return snapshot, ok, nil
+}
+
+// AuthSnapshotCurrent is a nonclosing conditional observation. It never grants
+// authority from a caller-built CID/token: an exact opaque accepted stamp and
+// all copied authentication fields must still match under the client lock.
+// The result is a point-in-time check, not a lock held for later application IO.
+func (s *Server) AuthSnapshotCurrent(snapshot ClientAuthSnapshot) bool {
+	if s == nil || !s.Running() || snapshot.Stamp.version == nil {
+		return false
+	}
+	if c := s.getClient(snapshot.CID); c != nil {
+		c.mu.Lock()
+		current := c.matchesAuthSnapshot(&snapshot)
+		c.mu.Unlock()
+		return current
+	}
+	return false
+}
+
+// Client lock must be held. No credentials are copied for incomplete or
+// unsupported authentications; preserve the full-snapshot API's exact scope.
+func (c *client) completedAuthSnapshotLocked() (ClientAuthSnapshot, bool) {
+	if c.kind != CLIENT || c.isMqtt() || c.authVersion == nil || c.authPending || !c.flags.isSet(connectReceived) || c.isClosed() || c.nc == nil {
+		return ClientAuthSnapshot{}, false
+	}
+	return ClientAuthSnapshot{CID: c.cid, Token: c.opts.Token, AuthorizedUser: c.getRawAuthUser(), Transport: c.authTransport(), Stamp: ClientAuthStamp{c.authVersion}}, true
 }
 
 // DisconnectClientIfAuth closes only the exact live authentication observed in
