@@ -601,7 +601,7 @@ func (ci *ConnInfo) fill(client *client, nc net.Conn, now time.Time, auth bool) 
 		if conn, ok := nc.(*tls.Conn); ok {
 			cs := conn.ConnectionState()
 			ci.TLSVersion = tlsVersion(cs.Version)
-			ci.TLSCipher = tls.CipherSuiteName(cs.CipherSuite)
+			ci.TLSCipher = monitoringCipherSuiteName(cs.CipherSuite)
 			if auth && len(cs.PeerCertificates) > 0 {
 				ci.TLSPeerCerts = makePeerCerts(cs.PeerCertificates)
 			}
