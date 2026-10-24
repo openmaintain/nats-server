@@ -330,6 +330,10 @@ type client struct {
 	// if we want to report a different error, we can now set this field
 	// and `authViolation()` will use that one.
 	authErr error
+
+	// Lock-protected completed-auth snapshots for embedded authorization checks.
+	authVersion *clientAuthVersion
+	authPending bool
 }
 
 type rrTracking struct {
@@ -995,6 +999,7 @@ func (c *client) RegisterUser(user *User) {
 	}
 
 	c.mu.Lock()
+	c.rotateRegisteredAuth()
 
 	// Assign permissions.
 	if user.Permissions == nil {
@@ -1032,6 +1037,7 @@ func (c *client) RegisterNkeyUser(user *NkeyUser) error {
 	}
 
 	c.mu.Lock()
+	c.rotateRegisteredAuth()
 	c.user = user
 	// Assign permissions.
 	if user.Permissions == nil {
@@ -2207,6 +2213,10 @@ func (c *client) processConnect(arg []byte) error {
 	// that other routines lookup the client, and access its options under
 	// the client's lock, so unmarshalling the options outside of the lock
 	// would cause data RACEs.
+	if kind == CLIENT {
+		c.authVersion = new(clientAuthVersion)
+		c.authPending = true
+	}
 	if err := json.Unmarshal(arg, &c.opts); err != nil {
 		c.mu.Unlock()
 		return err
@@ -2385,6 +2395,13 @@ func (c *client) processConnect(arg []byte) error {
 	case LEAF:
 		// Delegate the rest of processing to the leaf node
 		return c.processLeafNodeConnect(srv, arg, lang)
+	}
+	if kind == CLIENT {
+		c.mu.Lock()
+		if !c.isClosed() {
+			c.authPending = false
+		}
+		c.mu.Unlock()
 	}
 	return nil
 }
@@ -5995,10 +6012,18 @@ type qsub struct {
 }
 
 func (c *client) closeConnection(reason ClosedState) {
+	c.closeConnectionIfAuth(reason, nil)
+}
+
+func (c *client) closeConnectionIfAuth(reason ClosedState, expected *ClientAuthSnapshot) bool {
 	c.mu.Lock()
+	if expected != nil && !c.matchesAuthSnapshot(expected) {
+		c.mu.Unlock()
+		return false
+	}
 	if c.flags.isSet(closeConnection) {
 		c.mu.Unlock()
-		return
+		return false
 	}
 	// Note that we may have markConnAsClosed() invoked before closeConnection(),
 	// so don't set this to 1, instead bump the count.
@@ -6030,7 +6055,7 @@ func (c *client) closeConnection(reason ClosedState) {
 			// Unregister
 			s.removeClient(c)
 		}
-		return
+		return true
 	}
 
 	var (
@@ -6076,10 +6101,11 @@ func (c *client) closeConnection(reason ClosedState) {
 	// Don't reconnect connections that have been marked with
 	// the no reconnect flag.
 	if noReconnect {
-		return
+		return true
 	}
 
 	c.reconnect()
+	return true
 }
 
 // clearAccountSubs removes the client's subscriptions from its current account
